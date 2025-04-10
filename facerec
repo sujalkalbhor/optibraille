@@ -1,0 +1,185 @@
+import os
+import threading
+import time
+import logging
+import pickle
+import numpy as np
+import cv2
+import face_recognition
+from gtts import gTTS
+from queue import Queue
+from dataclasses import dataclass
+from typing import Optional
+from contextlib import contextmanager
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(_name_)
+
+@dataclass
+class Config:
+    VIDEO_STREAM_URL: str = "http://192.168.80.113/html/cam_pic_new.php?time=now"
+    CV_SCALER: int = 5
+    FACE_MATCH_THRESHOLD: float = 0.70
+    PROCESS_EVERY_N_FRAMES: int = 10
+    SPEAK_DELAY_FACE: int = 3
+    RECONNECTION_DELAY: int = 5
+    MAX_RECONNECTION_ATTEMPTS: int = 3
+    FRAME_QUEUE_SIZE: int = 10
+
+class FaceDetectionSystem:
+    def _init_(self):
+        self.config = Config()
+        self.frame_queue = Queue(maxsize=self.config.FRAME_QUEUE_SIZE)
+        self.stop_event = threading.Event()
+        self.recognized_name: Optional[str] = None
+        self.last_speak_time_face: float = 0
+        self.frame_counter: int = 0
+        self.load_face_encodings()
+
+    def load_face_encodings(self):
+        """Load face encodings from pickle file"""
+        try:
+            with open("encodings.pickle", "rb") as f:
+                data = pickle.loads(f.read())
+                self.known_face_encodings = data["encodings"]
+                self.known_face_names = data["names"]
+                logger.info(f"Loaded {len(self.known_face_names)} face encodings")
+        except Exception as e:
+            logger.error(f"Error loading face encodings: {e}")
+            self.known_face_encodings = []
+            self.known_face_names = []
+
+    @contextmanager
+    def video_capture(self):
+        """Context manager for video capture"""
+        cap = cv2.VideoCapture(self.config.VIDEO_STREAM_URL)
+        try:
+            if not cap.isOpened():
+                raise RuntimeError("Failed to open video stream")
+            yield cap
+        finally:
+            cap.release()
+
+    def speak(self, text: str):
+        """Generate and play audio using gTTS and ffplay"""
+        try:
+            logger.info(f"Speaking: {text}")
+            tts = gTTS(text=text, lang='hi')  # Changed to Hindi language
+            tts.save("speech.mp3")
+            os.system("ffplay -nodisp -autoexit speech.mp3")
+        except Exception as e:
+            logger.error(f"Speech failed: {e}")
+
+    def process_face(self, frame: np.ndarray):
+        """Detect and recognize faces in the frame"""
+        try:
+            if not self.known_face_encodings:
+                logger.error("No face encodings available.")
+                return
+
+            resized_frame = cv2.resize(frame, (0, 0),
+                                        fx=(1 / self.config.CV_SCALER),
+                                        fy=(1 / self.config.CV_SCALER))
+            rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+
+            face_locations = face_recognition.face_locations(rgb_frame)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+            current_time = time.time()
+            for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+                matches = face_recognition.compare_faces(
+                    self.known_face_encodings,
+                    face_encoding,
+                    tolerance=self.config.FACE_MATCH_THRESHOLD
+                )
+
+                name = "अपरिचित"  # Marathi for Unknown (you can keep or translate this if needed)
+
+                if any(matches):
+                    face_distances = face_recognition.face_distance(
+                        self.known_face_encodings,
+                        face_encoding
+                    )
+                    best_match_index = np.argmin(face_distances)
+
+                    if matches[best_match_index]:
+                        name = self.known_face_names[best_match_index]
+
+                # Announce face if new
+                if (self.recognized_name != name and
+                        current_time - self.last_speak_time_face > self.config.SPEAK_DELAY_FACE):
+                    self.recognized_name = name
+                    threading.Thread(target=self.speak, args=(f"{name} पहचाना गया है।",)).start()
+                    self.last_speak_time_face = current_time
+
+                # Draw face box
+                top *= self.config.CV_SCALER
+                right *= self.config.CV_SCALER
+                bottom *= self.config.CV_SCALER
+                left *= self.config.CV_SCALER
+
+                color = (0, 255, 0) if name != "अपरिचित" else (0, 0, 255)
+                cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+                cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
+
+        except Exception as e:
+            logger.error(f"Face recognition error: {e}")
+
+    def capture_frames(self):
+        """Capture frames from video stream"""
+        while not self.stop_event.is_set():
+            try:
+                with self.video_capture() as cap:
+                    while not self.stop_event.is_set():
+                        ret, frame = cap.read()
+                        if not ret:
+                            logger.warning("Failed to read frame")
+                            break
+
+                        if not self.frame_queue.full():
+                            self.frame_queue.put(frame)
+
+            except Exception as e:
+                logger.error(f"Video capture error: {e}")
+                time.sleep(self.config.RECONNECTION_DELAY)
+
+    def process_frames(self):
+        """Process frames from queue"""
+        while not self.stop_event.is_set():
+            try:
+                frame = self.frame_queue.get(timeout=1)
+                if self.frame_counter % self.config.PROCESS_EVERY_N_FRAMES == 0:
+                    self.process_face(frame)
+
+                cv2.imshow("Live Stream", frame)
+                self.frame_counter += 1
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    self.stop_event.set()
+                    break
+
+            except Exception as e:
+                logger.error(f"Frame processing error: {e}")
+
+    def run(self):
+        """Main entry point"""
+        logger.info("Starting face detection system...")
+        capture_thread = threading.Thread(target=self.capture_frames)
+        process_thread = threading.Thread(target=self.process_frames)
+
+        capture_thread.start()
+        process_thread.start()
+
+        try:
+            capture_thread.join()
+            process_thread.join()
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            self.stop_event.set()
+
+        cv2.destroyAllWindows()
+
+if _name_ == "_main_":
+    system = FaceDetectionSystem()
+    system.run()
