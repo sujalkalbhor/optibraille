@@ -1,0 +1,66 @@
+import os
+import cv2
+import time
+import requests
+import numpy as np
+from datetime import datetime
+
+# Name 
+PERSON_NAME = "atharv"
+
+# URL camera 
+CAMERA_URL = "http://192.168.80.113/html/cam_pic_new.php?time=now"
+
+def create_folder(name):
+    dataset_folder = "dataset"
+    if not os.path.exists(dataset_folder):
+        os.makedirs(dataset_folder)
+
+    person_folder = os.path.join(dataset_folder, name)
+    if not os.path.exists(person_folder):
+        os.makedirs(person_folder)
+    return person_folder
+
+def fetch_image_from_ip_camera():
+    try:
+        response = requests.get(CAMERA_URL, timeout=5)
+        image_bytes = np.asarray(bytearray(response.content), dtype=np.uint8)
+        frame = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        return frame
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch image from camera: {e}")
+        return None
+
+def capture_photos(name):
+    folder = create_folder(name)
+    photo_count = 0
+
+    print(f"[INFO] Taking photos for {name} from Raspberry Pi Zero camera.")
+    print("Press SPACE to capture, 'q' to quit.")
+
+    while True:
+        frame = fetch_image_from_ip_camera()
+        if frame is None:
+            print("[WARNING] Skipping frame due to fetch error.")
+            continue
+
+        # Show  frame
+        cv2.imshow("RPi Zero Camera", frame)
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord(' '):  # SPACE key to capture
+            photo_count += 1
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{name}_{timestamp}.jpg"
+            filepath = os.path.join(folder, filename)
+            cv2.imwrite(filepath, frame)
+            print(f"[INFO] Photo {photo_count} saved: {filepath}")
+
+        elif key == ord('q'):  # Q key to quit
+            break
+
+    cv2.destroyAllWindows()
+    print(f"[INFO] Photo capture completed. {photo_count} images saved for {name}.")
+
+if _name_ == "_main_":
+    capture_photos(PERSON_NAME)
