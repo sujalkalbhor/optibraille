@@ -1,0 +1,76 @@
+import os
+import cv2
+import pickle
+from imutils import paths
+import face_recognition
+from tqdm import tqdm
+
+def load_images_from_dataset(dataset_path, resize_width=None):
+    # Collect only .jpg or .jpeg images (case-insensitive)
+    image_paths = [p for p in paths.list_images(dataset_path)
+                   if p.lower().endswith((".jpg", ".jpeg"))]
+
+    known_encodings = []
+    known_names = []
+
+    for image_path in tqdm(image_paths, desc="[INFO] Encoding JPG Faces", unit="image"):
+        name = os.path.basename(os.path.dirname(image_path))
+        image = cv2.imread(image_path)
+
+        if image is None:
+            print(f"[WARNING] Failed to read image: {image_path}")
+            continue
+
+        # Optional resize for memory/performance tradeoff
+        if resize_width and image.shape[1] > resize_width:
+            scale = resize_width / image.shape[1]
+            image = cv2.resize(image, (resize_width, int(image.shape[0] * scale)))
+
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # Use CNN for highest accuracy (requires dlib compiled with CUDA for GPU)
+        boxes = face_recognition.face_locations(rgb, model="cnn")
+
+        if len(boxes) == 0:
+            print(f"[WARNING] No faces found in: {image_path}")
+            continue
+
+        # Optional: Skip images with multiple faces
+        if len(boxes) > 1:
+            print(f"[INFO] Multiple faces detected in {image_path}. Skipping for consistency.")
+            continue
+
+        encodings = face_recognition.face_encodings(rgb, boxes)
+
+        for encoding in encodings:
+            known_encodings.append(encoding)
+            known_names.append(name)
+
+    return known_encodings, known_names
+
+def save_encodings(encoding_file, encodings, names):
+    print(f"[INFO] Saving encodings to {encoding_file}")
+    data = {"encodings": encodings, "names": names}
+    with open(encoding_file, "wb") as f:
+        pickle.dump(data, f)
+    print("[INFO] Encodings successfully saved!")
+
+def main():
+    dataset_path = "dataset"
+    encoding_file = "encodings.pickle"
+
+    print("[INFO] Starting High-Accuracy Face Encoding for JPG images...")
+    known_encodings, known_names = load_images_from_dataset(
+        dataset_path,
+        resize_width=None  # Use full-res images for best accuracy
+    )
+
+    if not known_encodings:
+        print("[ERROR] No valid face encodings generated. Check your dataset.")
+        return
+
+    save_encodings(encoding_file, known_encodings, known_names)
+    print("[INFO] Face encoding process completed successfully.")
+
+if __name__ == "__main__":
+    main()
