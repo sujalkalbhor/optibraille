@@ -132,11 +132,11 @@ def main():
                     lat, lon = get_gps_location()
                     if lat and lon:
                         gmaps = f"https://www.google.com/maps?q={lat},{lon}"
-                        alert_msg = f"⚠️ Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n📍 Location: {gmaps}"
+                        alert_msg = f" Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n Location: {gmaps}"
                     else:
                         fallback_coords = "YOUR_FALLBACK_LATITUDE,YOUR_FALLBACK_LONGITUDE"
                         gmaps_link = f"https://www.google.com/maps?q={fallback_coords}"
-                        alert_msg = f"⚠️ Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n📍 Location (Fallback): {gmaps_link}"
+                        alert_msg = f" Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n Location (Fallback): {gmaps_link}"
 
                     print(alert_msg)
                     send_telegram_alert(alert_msg)
