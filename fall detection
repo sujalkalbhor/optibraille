@@ -5,8 +5,8 @@ import requests
 import serial
 import pynmea2
 
-BOT_TOKEN = "7992089704:AAE13hiy6CbY1m2c7AVCHLpSEsJLFbg52-8"
-CHAT_ID = "6646974415"
+BOT_TOKEN = "7992345677:AAE13hiy6CbY1m2c7AVCHLpSEsJLFbg52-8"
+CHAT_ID = "6646945698"
 
 try:
     gps_serial = serial.Serial("/dev/serial0", baudrate=9600, timeout=1)
