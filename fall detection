@@ -1,0 +1,168 @@
+import smbus2 as smbus
+import time
+import math
+import requests
+import serial
+import pynmea2
+
+BOT_TOKEN = "7992089704:AAE13hiy6CbY1m2c7AVCHLpSEsJLFbg52-8"
+CHAT_ID = "6646974415"
+
+try:
+    gps_serial = serial.Serial("/dev/serial0", baudrate=9600, timeout=1)
+    print("[INFO] GPS serial port initialized.")
+except serial.SerialException as e:
+    gps_serial = None
+    print(f"[WARNING] Could not initialize GPS serial port: {e}")
+    print("[WARNING] GPS functionality will be limited.")
+
+ADXL345_I2C_ADDR = 0x53
+POWER_CTL = 0x2D
+DATA_FORMAT = 0x31
+DATAX0 = 0x32
+
+class ADXL345:
+    G = 9.81
+
+    def __init__(self, bus_num=1):
+        try:
+            self.bus = smbus.SMBus(bus_num)
+            self.bus.write_byte_data(ADXL345_I2C_ADDR, DATA_FORMAT, 0x0B)
+            self.bus.write_byte_data(ADXL345_I2C_ADDR, POWER_CTL, 0x08)
+            print("[INFO] ADXL345 sensor initialized.")
+        except OSError as e:
+            print(f"[ERROR] Could not initialize ADXL345 sensor: {e}")
+            self.bus = None
+
+    def read_acceleration(self):
+        if self.bus is None:
+            return 0, 0, 0
+        try:
+            data = self.bus.read_i2c_block_data(ADXL345_I2C_ADDR, DATAX0, 6)
+
+            def convert(lo, hi):
+                val = (hi << 8) | lo
+                if val & (1 << 15):
+                    val -= (1 << 16)
+                return (val / 256.0) * self.G
+
+            x = convert(data[0], data[1])
+            y = convert(data[2], data[3])
+            z = convert(data[4], data[5])
+            return x, y, z
+        except OSError as e:
+            print(f"[ERROR] Error reading ADXL345 data: {e}")
+            return 0, 0, 0
+
+def get_gps_location():
+    if gps_serial is None:
+        return None, None
+    try:
+        while True:
+            line = gps_serial.readline().decode('utf-8', errors='ignore').strip()
+            if line.startswith("$GPGGA") or line.startswith("$GPRMC"):
+                try:
+                    msg = pynmea2.parse(line)
+                    if hasattr(msg, 'latitude') and hasattr(msg, 'longitude') and msg.latitude and msg.longitude:
+                        return msg.latitude, msg.longitude
+                except pynmea2.ParseError:
+                    pass
+    except serial.SerialException as e:
+        print(f"[ERROR] Error reading from GPS serial port: {e}")
+        return None, None
+    return None, None
+
+def send_telegram_alert(message):
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": message
+        }
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print(f"[ERROR] Telegram API error: {response.status_code} - {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to connect to Telegram: {e}")
+
+def is_sudden_acceleration_change(prev_accel, current_accel, threshold_multiplier=3):
+    if not prev_accel:
+        return False
+    prev_mag = math.sqrt(sum(x**2 for x in prev_accel))
+    current_mag = math.sqrt(sum(x**2 for x in current_accel))
+    change = abs(current_mag - prev_mag)
+    return change > (ADXL345.G * threshold_multiplier) or (current_mag > (ADXL345.G * 1.5) and change > (ADXL345.G * 1))
+
+def is_freefall(acceleration, threshold=0.3 * ADXL345.G):
+    magnitude = math.sqrt(sum(x**2 for x in acceleration))
+    return magnitude < threshold
+
+def main():
+    sensor = ADXL345()
+    if sensor.bus is None:
+        print("[ERROR] ADXL345 initialization failed. Exiting.")
+        return
+
+    fall_detected = False
+    fall_start_time = None
+    acceleration_history = []
+    history_size = 10
+    freefall_duration_threshold = 0.2
+    sudden_change_threshold_multiplier = 4
+
+    print("[INFO] Real-time Fall Detection System with Telegram + GPS started...")
+
+    try:
+        while True:
+            x, y, z = sensor.read_acceleration()
+            current_acceleration = (x, y, z)
+            accel_magnitude = math.sqrt(x ** 2 + y ** 2 + z ** 2)
+            print(f"Acceleration → X: {x:.2f} G, Y: {y:.2f} G, Z: {z:.2f} G, |Accel|: {accel_magnitude:.2f} G")
+
+            if len(acceleration_history) > 1 and is_sudden_acceleration_change(acceleration_history[-1], current_acceleration, sudden_change_threshold_multiplier):
+                print("[WARNING] Sudden acceleration change detected!")
+                fall_detected = True
+                fall_start_time = time.time()
+
+            if fall_detected and is_freefall(current_acceleration):
+                if fall_start_time is None:
+                    fall_start_time = time.time()
+                elif time.time() - fall_start_time >= freefall_duration_threshold:
+                    print("[ALERT] Potential fall confirmed based on freefall!")
+                    lat, lon = get_gps_location()
+                    if lat and lon:
+                        gmaps = f"https://www.google.com/maps?q={lat},{lon}"
+                        alert_msg = f"⚠️ Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n📍 Location: {gmaps}"
+                    else:
+                        fallback_coords = "YOUR_FALLBACK_LATITUDE,YOUR_FALLBACK_LONGITUDE"
+                        gmaps_link = f"https://www.google.com/maps?q={fallback_coords}"
+                        alert_msg = f"⚠️ Potential Fall Detected!\nTime: {time.strftime('%H:%M:%S %Z%z')}\n📍 Location (Fallback): {gmaps_link}"
+
+                    print(alert_msg)
+                    send_telegram_alert(alert_msg)
+                    fall_detected = False
+                    fall_start_time = None
+
+            elif fall_detected and fall_start_time and not is_freefall(current_acceleration) and (time.time() - fall_start_time > 2):
+                print("[INFO] Sudden change not followed by sustained freefall. Resetting fall detection.")
+                fall_detected = False
+                fall_start_time = None
+
+            acceleration_history.append(current_acceleration)
+            if len(acceleration_history) > history_size:
+                acceleration_history.pop(0)
+
+            time.sleep(0.05)
+
+    except KeyboardInterrupt:
+        print("\n[INFO] Fall Detection System stopped by user.")
+    finally:
+        if gps_serial and gps_serial.is_open:
+            gps_serial.close()
+            print("[INFO] GPS serial port closed.")
+        if sensor.bus:
+            sensor.bus.close()
+            print("[INFO] I2C bus closed.")
+
+if __name__ == "__main__":
+    main()
