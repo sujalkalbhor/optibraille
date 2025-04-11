@@ -34,3 +34,6 @@ Use of Live Location Tracking:
 Caretakers can view the live location of the user anytime.Adds safety and tracking in outdoor environments.
 Use of braille output:
 Accessibility for the Visually Impaired, Real-Time Reading, Supports Literacy, Portability, etc.
+
+Here’s an example of a 3D design of Vision Aid smart glasses:
+(https://drive.google.com/file/d/1lJXC0LVtqAoDdlRDR8MLiYQhKt4AmH-Z/view?usp=sharing)
