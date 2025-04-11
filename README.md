@@ -24,3 +24,13 @@ Working
 3. GPS Tracking:The user's location is tracked and sent to the caretaker's web dashboard or mobile interface.
 4. Health Monitoring:Real-time heart rate and temperature data are collected and logged for analysis and alerts.
 5. Face Recognition:When the device detects a face, it compares it against a trained database and informs the user if the person is recognized.
+
+Use of project:
+Use of smart glasses for face recognization:
+When a known face is detected by the camera, the system announces their name through audio output (via earphones/speaker).This helps the visually impaired user know who is nearby.
+Use of fall detection:
+Wearer doesn’t need to press anything.Falls are automatically detected and help is alerted instantly.
+Use of Live Location Tracking:
+Caretakers can view the live location of the user anytime.Adds safety and tracking in outdoor environments.
+Use of braille output:
+Accessibility for the Visually Impaired, Real-Time Reading, Supports Literacy, Portability, etc.
