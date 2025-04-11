@@ -37,3 +37,13 @@ Accessibility for the Visually Impaired, Real-Time Reading, Supports Literacy, P
 
 Here’s an example of a 3D design of Vision Aid smart glasses:
 (https://drive.google.com/file/d/1lJXC0LVtqAoDdlRDR8MLiYQhKt4AmH-Z/view?usp=sharing)
+website for the care taker:
+(https://drive.google.com/file/d/1GCj9LUtgGstAuyvdAIvFyx2cA3plLgtC/view?usp=sharing)
+location tracking:
+(https://drive.google.com/file/d/1GBjUMsxiWvr86hDa00s407lgi-ID-38f/view?usp=sharing)
+smart glasses with embedded raspberry pi camera:
+(https://drive.google.com/file/d/1GAvSNjvQtWQRGIguRckCu8iQLTe_mEm2/view?usp=sharing)
+stick with health monitoring system:
+(https://drive.google.com/file/d/1G8mS5LHzPDgXRE6yjdcH3rB6As8oetHI/view?usp=sharing)
+braille output:
+(https://drive.google.com/file/d/1GJpqPt-GmextBNcORV2PrmpXCd3PhT1M/view?usp=sharing)
